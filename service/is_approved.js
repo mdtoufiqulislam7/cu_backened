@@ -13,9 +13,15 @@ const transporter = nodemailer.createTransport({
 // Send approval email with ticket
 const sendApprovalEmail = async (email, userName, paymentId, registrationData) => {
   try {
+    console.log('📧 Starting email send process...');
+    console.log('Email parameters:', { email, userName, paymentId, registrationData });
+    
     const ticketId = `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
     const currentDate = new Date();
     const eventDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
+    
+    console.log('Generated ticket ID:', ticketId);
+    console.log('Event date:', eventDate.toLocaleDateString());
     
     const emailTemplate = `
       <!DOCTYPE html>
@@ -299,7 +305,7 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
             <h3 style="color: #28a745; margin-bottom: 20px;">📥 Download Your Ticket</h3>
             <p>Click the button below to download your ticket as a PDF:</p>
             <button class="download-btn" onclick="window.print()">🖨️ Print Ticket</button>
-            <a href="data:text/html;charset=utf-8,${encodeURIComponent(document.documentElement.outerHTML)}" class="download-btn" download="burnerz-ticket-${ticketId}.html">💾 Download HTML</a>
+            // <button class="download-btn" onclick="downloadTicket()">💾 Download HTML</button>
           </div>
           
           <div class="no-print">
@@ -309,7 +315,7 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
           <div class="contact-info">
             <h4>📞 Contact Information</h4>
             <p><strong>🏕️ Road Burnerz Club</strong></p>
-            <p><strong>👤 Ashraful Hasib - Registration committee (RSB)</strong></p>
+            <p><strong>👤 Ashraful Hasib - Registration committee (RBC)</strong></p>
             <p><strong>📞 01629253127 </strong></p>
             <p><strong>📧 For any queries, contact us at the above number</strong></p>
           </div>
@@ -346,8 +352,14 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
       html: emailTemplate,
     };
 
+    console.log('📤 Sending email with options:', {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: '🎉 Payment Approved - Transaction Complete'
+    });
+
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent successfully:', info.messageId);
+    console.log('✅ Email sent successfully:', info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Email sending error:', error);
@@ -395,12 +407,22 @@ const createIsApproved = async (data) => {
     // Send email if email exists
     if (registration.email) {
       try {
+        console.log('Attempting to send email to:', registration.email);
+        console.log('Registration data:', {
+          name: registration.name,
+          transaction_id: registration.transaction_id,
+          email: registration.email
+        });
+        
         await sendApprovalEmail(registration.email, registration.name, registration.transaction_id, registration);
-        console.log(`Approval email sent to ${registration.email}`);
+        console.log(`✅ Approval email sent successfully to ${registration.email}`);
       } catch (emailError) {
-        console.error('Email sending failed:', emailError.message);
+        console.error('❌ Email sending failed:', emailError.message);
+        console.error('Full error:', emailError);
         // Don't throw error here, just log it - the approval record should still be created
       }
+    } else {
+      console.log('❌ No email found for registration:', registration);
     }
   }
   
@@ -418,10 +440,10 @@ const getAllIsApproved = async () => {
       ia.*,
       r.transaction_id,
       r.payment_status,
-      r.payment_picture_url,
+      r.payment_picture,
       r.name as registrant_name,
       r.email as registrant_email,
-      r.phone as registrant_phone
+      r.contact_number as registrant_phone
     FROM is_approved ia
     LEFT JOIN registation r ON ia.payment_id = r.id
     ORDER BY ia.created_at DESC
@@ -436,10 +458,10 @@ const getIsApprovedById = async (id) => {
       ia.*,
       r.transaction_id,
       r.payment_status,
-      r.payment_picture_url,
+      r.payment_picture,
       r.name as registrant_name,
       r.email as registrant_email,
-      r.phone as registrant_phone
+      r.contact_number as registrant_phone
     FROM is_approved ia
     LEFT JOIN registation r ON ia.payment_id = r.id
     WHERE ia.id = $1
