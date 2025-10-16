@@ -12,7 +12,7 @@ const pool = require('./config/db')
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3001', 'http://127.0.0.1:3000', 'https://roadburnerz.vercel.app/'],
+  origin: ['http://localhost:5173', 'http://localhost:3001', 'http://127.0.0.1:3000', 'https://roadburnerz.vercel.app'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'multipart/form-data']
