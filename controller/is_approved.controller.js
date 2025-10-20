@@ -23,10 +23,14 @@ const createIsApproved = async (req, res) => {
       });
     }
     
+    console.log('🎯 Creating is_approved entry with data:', { payment_id, approved });
+    
     const result = await isApprovedService.createIsApproved({
       payment_id: payment_id.trim(),
       approved: approved
     });
+    
+    console.log('✅ Service returned result:', result);
     
     res.status(201).json({
       message: "Approval status created successfully",

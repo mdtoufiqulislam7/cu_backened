@@ -3,16 +3,26 @@ const infoService = require("../service/info");
 
 const getPersons = async (req, res) => {
   try {
+    console.log('🎯 getPersons API called');
+    console.log('📊 Query params:', req.query);
+    console.log('📋 Headers:', req.headers);
+    
     const persons = await infoService.getAllPersons();
+    console.log('✅ Found persons:', persons.length);
+    
     res.json(persons);
   } catch (err) {
-    console.error(err.message);
+    console.error('❌ Error in getPersons:', err.message);
     res.status(500).send("Server Error");
   }
 };
 
 
 const addPerson = async (req, res) => {
+  console.log('🎯 addPerson API called');
+  console.log('📦 Request body:', req.body);
+  console.log('📁 File uploaded:', req.file ? 'Yes' : 'No');
+  
   const { 
     contact_number, 
     email, 

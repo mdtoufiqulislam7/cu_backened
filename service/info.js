@@ -56,7 +56,7 @@ const uploadToCloudinary = async (file) => {
 
 
 const getAllPersons = async () => {
-  const result = await pool.query("SELECT * FROM registation");
+  const result = await pool.query("SELECT * FROM registation WHERE payment_status = 'pending' OR payment_status IS NULL OR payment_status = ''");
   return result.rows;
 };
 

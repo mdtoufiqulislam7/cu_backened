@@ -16,7 +16,15 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
     console.log('📧 Starting email send process...');
     console.log('Email parameters:', { email, userName, paymentId, registrationData });
     
-    const ticketId = `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+    // Generate ticket ID using first part of registration ID (UUID) or fallback to timestamp
+    let ticketId;
+    if (registrationData.id && typeof registrationData.id === 'string' && registrationData.id.includes('-')) {
+      const registrationIdFirstPart = registrationData.id.split('-')[0];
+      ticketId = `TKT-${registrationIdFirstPart}`;
+    } else {
+      // Fallback if registrationData.id is null or invalid
+      ticketId = `TKT-${Date.now().toString().slice(-8)}`;
+    }
     const currentDate = new Date();
     const eventDate = new Date(currentDate.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days from now
     
@@ -289,23 +297,11 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
               </div>
             </div>
             
-            <div class="qr-placeholder">
-              QR Code<br>
-              ${ticketId}
-            </div>
-            
             <div class="ticket-footer">
               <p><strong>Transaction ID:</strong> ${paymentId}</p>
               <p><strong>Issued Date:</strong> ${currentDate.toLocaleDateString()}</p>
               <p><em>This ticket is valid for entry to the event. Please present this ticket at the venue.</em></p>
             </div>
-          </div>
-          
-          <div class="download-section">
-            <h3 style="color: #28a745; margin-bottom: 20px;">📥 Download Your Ticket</h3>
-            <p>Click the button below to download your ticket as a PDF:</p>
-            <button class="download-btn" onclick="window.print()">🖨️ Print Ticket</button>
-            // <button class="download-btn" onclick="downloadTicket()">💾 Download HTML</button>
           </div>
           
           <div class="no-print">
@@ -325,22 +321,6 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
             <p>© ${new Date().getFullYear()} Team Phonex. All rights reserved.</p>
           </div>
         </div>
-        
-        <script>
-          // Auto-download functionality
-          function downloadTicket() {
-            const ticketContent = document.querySelector('.ticket').outerHTML;
-            const blob = new Blob([ticketContent], { type: 'text/html' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'burnerz-ticket-${ticketId}.html';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }
-        </script>
       </body>
       </html>
     `;
@@ -358,8 +338,19 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
       subject: '🎉 Payment Approved - Transaction Complete'
     });
 
+    console.log('🔧 Email transporter config:', {
+      host: transporter.options.host,
+      port: transporter.options.port,
+      secure: transporter.options.secure,
+      auth: {
+        user: transporter.options.auth?.user,
+        pass: transporter.options.auth?.pass ? '***hidden***' : 'NOT SET'
+      }
+    });
+
     const info = await transporter.sendMail(mailOptions);
     console.log('✅ Email sent successfully:', info.messageId);
+    console.log('📧 Email response:', info);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Email sending error:', error);
@@ -369,68 +360,93 @@ const sendApprovalEmail = async (email, userName, paymentId, registrationData) =
 
 // Create is_approved entry and send email
 const createIsApproved = async (data) => {
-  const { payment_id, approved } = data;
-  
-  // First, get registration details using payment_id
-  const registrationResult = await pool.query(`
-    SELECT 
-      r.*,
-      r.name as name,
-      r.email as email,
-      r.transaction_id as transaction_id
-    FROM registation r
-    WHERE r.id = $1
-  `, [payment_id]);
-  
-  if (registrationResult.rows.length === 0) {
-    throw new Error('Registration not found');
-  }
-  
-  const registration = registrationResult.rows[0];
-  
-  // Create is_approved entry
-  const result = await pool.query(
-    `INSERT INTO is_approved (payment_id, approved)
-     VALUES ($1, $2) RETURNING *`,
-    [payment_id, approved]
-  );
-  
-  // If approved is true, update registration payment_status to 'success' and send email
-  if (approved) {
-    // Update registration payment_status to 'success'
-    await pool.query(
-      `UPDATE registation SET payment_status = 'success', updated_at = CURRENT_TIMESTAMP 
-       WHERE id = $1`,
-      [payment_id]
+  try {
+    const { payment_id, approved } = data;
+    
+    console.log('🔧 Starting createIsApproved with:', { payment_id, approved });
+    
+    // First, get registration details using payment_id
+    const registrationResult = await pool.query(`
+      SELECT 
+        r.*,
+        r.name as name,
+        r.email as email,
+        r.transaction_id as transaction_id
+      FROM registation r
+      WHERE r.id = $1
+    `, [payment_id]);
+    
+    if (registrationResult.rows.length === 0) {
+      throw new Error('Registration not found');
+    }
+    
+    const registration = registrationResult.rows[0];
+    console.log('📊 Found registration:', { id: registration.id, name: registration.name, email: registration.email });
+    
+    // Create is_approved entry
+    const result = await pool.query(
+      `INSERT INTO is_approved (payment_id, approved)
+       VALUES ($1, $2) RETURNING *`,
+      [payment_id, approved]
     );
     
-    // Send email if email exists
-    if (registration.email) {
-      try {
-        console.log('Attempting to send email to:', registration.email);
-        console.log('Registration data:', {
-          name: registration.name,
-          transaction_id: registration.transaction_id,
-          email: registration.email
-        });
-        
-        await sendApprovalEmail(registration.email, registration.name, registration.transaction_id, registration);
-        console.log(`✅ Approval email sent successfully to ${registration.email}`);
-      } catch (emailError) {
-        console.error('❌ Email sending failed:', emailError.message);
-        console.error('Full error:', emailError);
-        // Don't throw error here, just log it - the approval record should still be created
+    console.log('✅ Created is_approved entry:', result.rows[0]);
+    
+    // Initialize emailSent variable
+    let emailSent = false;
+    
+    // If approved is true, update registration payment_status to 'success' and send email
+    if (approved) {
+      console.log('🔄 Updating payment_status to success...');
+      
+      // Update registration payment_status to 'success'
+      await pool.query(
+        `UPDATE registation SET payment_status = 'success', updated_at = CURRENT_TIMESTAMP 
+         WHERE id = $1`,
+        [payment_id]
+      );
+      
+      console.log('✅ Payment status updated to success');
+      
+      // Send email if email exists
+      if (registration.email) {
+        try {
+          console.log('📧 Attempting to send email to:', registration.email);
+          console.log('📊 Registration data:', {
+            name: registration.name,
+            transaction_id: registration.transaction_id,
+            email: registration.email
+          });
+          
+          const emailResult = await sendApprovalEmail(registration.email, registration.name, registration.transaction_id, registration);
+          console.log(`✅ Approval email sent successfully to ${registration.email}`);
+          console.log('📧 Email result:', emailResult);
+          emailSent = true;
+        } catch (emailError) {
+          console.error('❌ Email sending failed:', emailError.message);
+          console.error('📧 Full email error:', emailError);
+          emailSent = false;
+          // Don't throw error here, just log it - the approval record should still be created
+        }
+      } else {
+        console.log('⚠️ No email address found for registration');
+        emailSent = false;
       }
-    } else {
-      console.log('❌ No email found for registration:', registration);
     }
+    
+    const finalResult = {
+      ...result.rows[0],
+      registration_details: registration,
+      email_sent: emailSent
+    };
+    
+    console.log('🎉 Returning final result:', finalResult);
+    return finalResult;
+    
+  } catch (error) {
+    console.error('💥 Error in createIsApproved service:', error);
+    throw error;
   }
-  
-  return {
-    ...result.rows[0],
-    registration_details: registration,
-    email_sent: approved && registration.email ? true : false
-  };
 };
 
 // Get all is_approved entries
@@ -438,9 +454,11 @@ const getAllIsApproved = async () => {
   const result = await pool.query(`
     SELECT 
       ia.*,
+      r.id as ticket_id ,
       r.transaction_id,
       r.payment_status,
       r.payment_picture,
+      r.t_size,
       r.name as registrant_name,
       r.email as registrant_email,
       r.contact_number as registrant_phone
